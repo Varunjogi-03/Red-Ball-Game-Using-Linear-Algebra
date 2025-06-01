@@ -1,3 +1,9 @@
+import pygame
+import math
+import random
+import numpy as np
+
+
 class Camera:
     """Advanced camera system using matrix transformations and linear interpolation"""
 
@@ -91,11 +97,6 @@ class Camera:
         return MatrixMath.lerp_matrix(self.previous_matrix, self.view_matrix, alpha)
 
 
-import pygame
-import math
-import random
-import numpy as np
-import os
 
 
 class MatrixMath:
@@ -393,7 +394,7 @@ class Ball:
         self.scale_factor = 1.0
         self.scale_timer = 0
         self.rotation = 0
-
+        self.lives = 2  # Start with 2 lives
 
         self.gravity = 0.5
         self.jump_force = -12
@@ -404,8 +405,13 @@ class Ball:
         """Apply scaling powerup using matrix transformation"""
         if power_type == 'grow':
             self.scale_factor = 2.0
+            # Regenerate a life when growing
+            if self.lives < 2:
+                self.lives += 1
         else:
             self.scale_factor = 0.5
+            # Lose a life when shrinking
+            self.lives -= 1
         self.scale_timer = 300
 
     def update(self):
@@ -561,7 +567,7 @@ class Game:
         self.width = 1000
         self.height = 600
         self.screen = pygame.display.set_mode((self.width, self.height))
-        pygame.display.set_caption("Matrix Platformer - Advanced Camera with Linear Interpolation!")
+        pygame.display.set_caption("Red Ball Game")
         self.clock = pygame.time.Clock()
 
         # Load flag image
@@ -606,11 +612,17 @@ class Game:
             platforms = [
                 Platform(0, 550, 200, 50),
                 Platform(300, 450, 150, 20),
-                Platform(500, 350, 100, 20),
+                # First narrow gap section
+                Platform(500, 350, 60, 20),  # Left platform
+                Platform(580, 350, 60, 20),  # Right platform (20px gap)
                 Platform(700, 250, 120, 20),
-                Platform(900, 350, 100, 20),
+                # Second narrow gap section
+                Platform(900, 350, 50, 20),  # Left platform
+                Platform(580, 350, 50, 20),  # Right platform (30px gap)
                 Platform(1100, 450, 150, 20),
-                Platform(1300, 350, 100, 20),
+                # Third narrow gap section
+                Platform(1300, 350, 40, 20),  # Left platform
+                Platform(1360, 350, 40, 20),  # Right platform (20px gap)
                 Platform(1500, 250, 120, 20),
                 Platform(1700, 350, 100, 20),
                 Platform(1850, 500, 150, 50),
@@ -710,11 +722,13 @@ class Game:
             ]
         elif self.current_level == 2:
             powerups = [
-                PowerUp(350, 430, 'grow'),
-                PowerUp(650, 330, 'shrink'),
-                PowerUp(950, 230, 'grow'),
-                PowerUp(1250, 330, 'shrink'),
-                PowerUp(1550, 430, 'grow'),
+                # Power-ups before each narrow gap
+                PowerUp(450, 330, 'shrink'),  # Before first gap
+                PowerUp(850, 330, 'shrink'),  # Before second gap
+                PowerUp(1250, 330, 'shrink'),  # Before third gap
+                # Additional power-ups for recovery
+                PowerUp(1000, 430, 'grow'),
+                PowerUp(1600, 430, 'grow'),
             ]
         else:  # Level 3
             powerups = [
@@ -783,6 +797,8 @@ class Game:
                     self.current_level += 1
                     self.reset_level()
                     self.level_complete = False
+                    # Add a strong screen shake for level transition
+                    self.camera.add_screen_shake(8, 45)  # Stronger and longer shake for level transition
 
     def draw_world_object(self, world_pos, draw_func, *args):
         """Helper function to draw world objects using camera transformation"""
@@ -796,22 +812,26 @@ class Game:
         level_text = self.font.render(f"Level: {self.current_level}/{self.max_level}", True, (255, 255, 255))
         self.screen.blit(level_text, (10, 50))
 
+        # Draw lives
+        lives_text = self.font.render(f"Lives: {self.ball.lives}", True, (255, 255, 255))
+        self.screen.blit(lives_text, (10, 90))
+
         coins_collected = sum(1 for coin in self.coins if coin.collected)
         coin_text = self.font.render(f"Coins: {coins_collected}/{len(self.coins)}", True, (255, 255, 255))
-        self.screen.blit(coin_text, (10, 90))
+        self.screen.blit(coin_text, (10, 130))
 
         if self.ball.scale_timer > 0:
             power_type = "LARGE" if self.ball.scale_factor > 1 else "SMALL"
             power_text = self.font.render(f"Power: {power_type} ({self.ball.scale_timer // 60 + 1}s)",
                                           True, (255, 255, 0))
-            self.screen.blit(power_text, (10, 130))
+            self.screen.blit(power_text, (10, 170))
 
         cam_info = self.font.render(f"Zoom: {self.camera.zoom:.2f}x", True, (150, 150, 255))
-        self.screen.blit(cam_info, (10, 170))
+        self.screen.blit(cam_info, (10, 210))
 
         if not self.level_complete:
             inst_text = pygame.font.Font(None, 24).render(
-                "ARROWS/WASD: move, SPACE: jump. Reach the flag to win!",
+                "ARROWS/AD: move, SPACE: jump. Reach the flag to win!",
                 True, (200, 200, 200))
             self.screen.blit(inst_text, (10, self.height - 50))
 
@@ -836,6 +856,11 @@ class Game:
                     if event.key == pygame.K_r and self.level_complete and self.current_level == self.max_level:
                         self.current_level = 1
                         self.reset_level()
+                    # Reset level if all lives are lost
+                    elif self.ball.lives <= 0:
+                        self.score = 0  # Reset score
+                        self.reset_level()
+                        self.camera.add_screen_shake(10, 60)  # Strong shake for life loss
 
             keys = pygame.key.get_pressed()
             if keys[pygame.K_LEFT] or keys[pygame.K_a]:
@@ -862,6 +887,11 @@ class Game:
                 if self.ball.pos[1] > self.height + 100:
                     self.ball.pos = list(self.ball.original_pos)
                     self.ball.velocity = [0, 0]
+                    self.ball.lives -= 1  # Lose a life when falling off
+                    if self.ball.lives <= 0:
+                        self.score = 0  # Reset score
+                        self.reset_level()
+                        self.camera.add_screen_shake(10, 60)  # Strong shake for life loss
 
             self.screen.fill((50, 50, 100))
 
